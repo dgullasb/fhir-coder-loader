@@ -2,6 +2,7 @@ package com.fhir.coder.loader.generate;
 
 import ca.uhn.fhir.context.FhirContext;
 import static com.fhir.coder.loader.SystemURLMappings.shortHandToSystemUrl;
+
 import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.openxml4j.opc.PackageAccess;
@@ -28,8 +29,11 @@ import org.xml.sax.XMLReader;
 
 import javax.xml.parsers.ParserConfigurationException;
 import java.io.*;
-import java.util.HashMap;
-import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Process the VSAC spreadsheet and produce ValueSet(s):
@@ -38,25 +42,12 @@ import java.util.Map;
  */
 public class ProcessSpreadsheetByCmsId {
 
-    public static void main(String[] args) throws OpenXML4JException, IOException, SAXException, ParserConfigurationException {
+    public static void main(String[] args) throws IOException {
         //TODO: need to get mvn generate-resources working
         deleteDir(new File("target/gen-resources/"));
 
         //identify all spreadsheets
-
-        String reportYear = "2022";
-        OPCPackage opcPkg = OPCPackage.open("C:\\development\\workspace\\vsac-codes\\src\\main\\resources\\" + reportYear + "\\ep_ec_eh_cms_20210506.xlsx", PackageAccess.READ);
-        ReadOnlySharedStringsTable strings = new ReadOnlySharedStringsTable(opcPkg);
-        XSSFReader xssfReader = new XSSFReader(opcPkg);
-        StylesTable styles = xssfReader.getStylesTable();
-        XSSFReader.SheetIterator sheetsData = (XSSFReader.SheetIterator) xssfReader.getSheetsData();
-        while (sheetsData.hasNext()) {
-            InputStream stream = sheetsData.next();
-            //CMS104v10, CMS105v10, CMS108v10, etc...
-            String[] reportAndVersion = extractReportAndVersion(sheetsData.getSheetName());
-            processSheet(styles, strings, getHandler(reportYear, reportAndVersion[0], reportAndVersion[1]), stream);
-            stream.close();
-        }
+        getAllSpreadsheets();
     }
 
     public static boolean deleteDir(File dir) {
@@ -73,6 +64,41 @@ public class ProcessSpreadsheetByCmsId {
         return dir.delete();
     }
 
+    private static void getAllSpreadsheets() throws IOException {
+        Path dir = Paths.get("src/main/resources");
+        Files.walk(dir).forEach(path -> {
+            try {
+                processFile(path.toFile());
+            } catch (OpenXML4JException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (SAXException e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private static void processFile(File entry) throws OpenXML4JException, IOException, SAXException {
+        String filePath = entry.getPath();
+        if (filePath.endsWith(".xlsx")) {
+            String pattern = Pattern.quote(System.getProperty("file.separator"));
+            String[] split = filePath.split(pattern);
+            String reportYear = split[3];
+            OPCPackage opcPkg = OPCPackage.open(filePath, PackageAccess.READ);
+            ReadOnlySharedStringsTable strings = new ReadOnlySharedStringsTable(opcPkg);
+            XSSFReader xssfReader = new XSSFReader(opcPkg);
+            StylesTable styles = xssfReader.getStylesTable();
+            XSSFReader.SheetIterator sheetsData = (XSSFReader.SheetIterator) xssfReader.getSheetsData();
+            while (sheetsData.hasNext()) {
+                InputStream stream = sheetsData.next();
+                //CMS104v10, CMS105v10, CMS108v10, etc...
+                String[] reportAndVersion = extractReportAndVersion(sheetsData.getSheetName());
+                processSheet(styles, strings, getHandler(reportYear, reportAndVersion[0], reportAndVersion[1]), stream);
+                stream.close();
+            }
+        }
+    }
     public static String[] extractReportAndVersion(String worksheetName) {
         System.out.println("worksheet: " + worksheetName);
         String[] reportAndVersion = worksheetName.split("v");
@@ -137,18 +163,6 @@ public class ProcessSpreadsheetByCmsId {
                 }
             }
 
-            /**
-             * <compose>
-             *     <include>
-             *       <system value="http://snomed.info/sct"/>
-             *       <filter>
-             *         <property value="concept"/>
-             *         <op value="in"/>
-             *         <value value="[sctid]"/>
-             *       </filter>
-             *     </include>
-             *   </compose>
-             */
             private void processChildRow() throws IOException {
                 //need to delimit when processing a different valueset is being processed
                 if (!rowValues.get("D").equals(currentValueSetOID)) {
@@ -176,20 +190,6 @@ public class ProcessSpreadsheetByCmsId {
 
                 //TODO: consider compounding H, I, J, K inside the <text><div> to build the narrative
                 valueSet.setText(new Narrative(new Narrative.NarrativeStatusEnumFactory().fromType(new StringType("extensions")), new XhtmlDocument().div()));
-                /**
-                 *   <text>
-                 *     <status value="generated"/>
-                 *     <div xmlns="http://www.w3.org/1999/xhtml">
-                 *      [Some HTML that describes this value set as all concepts in the reference set identified by sctid]
-                 *     </div>
-                 *   </text>
-                 *   <url value="[edition/version]?fhir_vs=refset/[sctid]"/>
-                 *   <version value="[edition/version]"/>
-                 *   <name value="SNOMED CT Reference Set [sctid]"/>
-                 *   <description value="All SNOMED CT concepts in the reference set [sctid or preferred description]"/>
-                 *   <copyright value="This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (SNOMED International), and distributed by agreement between SNOMED International and HL7. Implementer use of SNOMED CT is not covered by this agreement"/>
-                 *   <status value="active"/>
-                 */
             }
 
             private boolean identifyTitleRow() {
@@ -244,7 +244,7 @@ public class ProcessSpreadsheetByCmsId {
                 if (valueSet == null) {
                     return;
                 }
-                createIndexFile();
+//                createIndexFile();
                 createValueSetFiles();
                 valueSet = null;
             }
@@ -256,7 +256,6 @@ public class ProcessSpreadsheetByCmsId {
                 f.createNewFile();
                 Map<String, String> map = new HashMap<>();
                 BufferedWriter writer = new BufferedWriter(new FileWriter(f, true));
-                //TODO: if we have to group concept codes by the include.system, then this needs to change.
                 for (ValueSet.ConceptSetComponent include : valueSet.getCompose().getInclude()) {
                     if(map.containsKey(include.getSystem())) {
                         map.put(include.getSystem(), map.get(include.getSystem()) + "|" + include.getConcept().get(0).getCode());
@@ -279,7 +278,6 @@ public class ProcessSpreadsheetByCmsId {
                 BufferedWriter writer = new BufferedWriter(new FileWriter(f, true));
                 writer.append(FhirContext.forR4().newJsonParser().setPrettyPrint(true).encodeResourceToString(valueSet));
                 writer.close();
-                System.out.println("\t\tcreated new ValueSet");
             }
 
             @Override
