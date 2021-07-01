@@ -10,8 +10,11 @@ StrictFhirCoderLoader - expects the user to supply a valid contextual Year and C
 
 
 # Ambitions:
-LenientFhirCoderLoader - if either requested Year or CMS Report is not found, then attempt to index prior year(s) to find the parent OID(s).
+> LenientFhirCoderLoader - if either requested Year or CMS Report is not found, then attempt to index prior year(s) to find the parent OID(s).
 
-VSACS downloads cover RxNorm (generic medications) but in addition we need to accurately code NDC (National Drug Code). We need to find out if there is a downloadable package for NDC codes:
+> VSACS downloads cover RxNorm (generic medications) but in addition we need to accurately code NDC (National Drug Code). We need to find out if there is a downloadable package for NDC codes:
 
 https://mor.nlm.nih.gov/RxNav
+
+> Multiple build artifacts can be constructed with classifiers(s) so other projects can choose to only get indexed json files relevant to their report(s):
+    Ex: fhir-coder-loader-ALL.jar, fhir-coder-loader-CMS104-2017.jar, fhir-coder-loader-NDC-2021.jar
