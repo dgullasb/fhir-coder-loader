@@ -1,8 +1,7 @@
 package com.fhir.coder.loader.generate;
 
 import ca.uhn.fhir.context.FhirContext;
-import static com.fhir.coder.loader.SystemURLMappings.shortHandToSystemUrl;
-
+import com.fhir.coder.loader.util.LoaderUtil;
 import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.openxml4j.opc.PackageAccess;
@@ -34,6 +33,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Pattern;
+
+import static com.fhir.coder.loader.SystemURLMappings.shortHandToSystemUrl;
 
 /**
  * Process the VSAC spreadsheet and produce ValueSet(s):
@@ -81,7 +82,7 @@ public class ProcessSpreadsheetByCmsId {
 
     private static void processFile(File entry) throws OpenXML4JException, IOException, SAXException {
         String filePath = entry.getPath();
-        if (filePath.endsWith(".xlsx")) {
+        if (filePath.endsWith(".xlsx") && filePath.contains("ep_ec_eh_cms_")) {
             String pattern = Pattern.quote(System.getProperty("file.separator"));
             String[] split = filePath.split(pattern);
             String reportYear = split[3];
@@ -273,9 +274,19 @@ public class ProcessSpreadsheetByCmsId {
             private void createValueSetFiles() throws IOException {
                 String filename = valueSet.getUrl().substring(8) + ".json";
                 File f = new File(path, filename);
-                f.getParentFile().mkdirs();
-                f.createNewFile();
-                BufferedWriter writer = new BufferedWriter(new FileWriter(f, true));
+                //some of the valuesets downloaded may not be ordered, so merge prior subsets
+                if (f.exists()) {
+                    String relativePath = "target/gen-resources/" + reportYear + "/" + filename;
+                    System.out.println("exists: " + relativePath);
+                    ValueSet existingValueSet = LoaderUtil.loadResourceFromFile(relativePath);
+                    for (ValueSet.ConceptSetComponent include : existingValueSet.getCompose().getInclude()) {
+                        valueSet.getCompose().addInclude(include);
+                    }
+                } else {
+                    f.getParentFile().mkdirs();
+                    f.createNewFile();
+                }
+                BufferedWriter writer = new BufferedWriter(new FileWriter(f, false));
                 writer.append(FhirContext.forR4().newJsonParser().setPrettyPrint(true).encodeResourceToString(valueSet));
                 writer.close();
             }

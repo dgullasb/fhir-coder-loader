@@ -5,7 +5,7 @@ import javax.annotation.Nonnull;
 public class FhirCoderLoaderContext {
     private String year;
     private String report;
-    public FhirCoderLoaderContext(@Nonnull final String year, @Nonnull final String report) {
+    public FhirCoderLoaderContext(@Nonnull final String year, final String report) {
         this.year = year;
         this.report = report;
     }
